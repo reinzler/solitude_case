@@ -1,0 +1,35 @@
+<?xml version="1.6" ?>
+<sdf version="1.6">
+  <model name="aruco_marker">
+    <static>true</static>
+    <link name="link">
+      <visual name="visual">
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>1 1</size>  <!-- Adjust the size as needed -->
+          </plane>
+        </geometry>
+        <material>
+          <script>
+            <uri>model://aruco/materials/scripts</uri>
+            <uri>model://aruco/materials/textures</uri>
+            <name>marker</name>
+          </script>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <emissive>0 0 0 1</emissive>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>1 1</size>
+          </plane>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>
