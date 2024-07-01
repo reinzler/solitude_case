@@ -4,10 +4,10 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
-from colorama import Fore
 import math
 
-class OffboardControl(Node):
+
+class CircleFlight(Node):
     """Node for controlling a vehicle in offboard mode."""
 
     def __init__(self) -> None:
@@ -36,10 +36,10 @@ class OffboardControl(Node):
             VehicleStatus, '/fmu/out/vehicle_status', self.vehicle_status_callback, qos_profile)
 
         # Initialize variables
-        self.offboard_setpoint_counter = 0
+        self.offboard_setpoint_counter = 0  # Counter for offboard setpoint publishing
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
-        self.takeoff_height = -15.0
+        self.takeoff_height = -15.0  # Desired takeoff height
         self.radius = 10.0  # Radius of the circle
         self.num_points = 36  # Number of points on the circle
         self.circle_points = self.generate_circle_points(self.radius, self.num_points)
@@ -132,25 +132,28 @@ class OffboardControl(Node):
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
 
+        # After 10 iterations, engage offboard mode and arm the vehicle
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
+        # If the vehicle has reached the takeoff height and is in offboard mode, start flying in a circle
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             x, y = self.circle_points[self.point_index]
             self.publish_position_setpoint(x, y, self.takeoff_height)
             self.point_index = (self.point_index + 1) % len(self.circle_points)
 
+        # Increment the offboard setpoint counter until it reaches 11
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1
 
 
 def main(args=None) -> None:
-    print('Starting offboard control node...')
+    print("Starting offboard control node, drone is flying in a circle")
     rclpy.init(args=args)
-    offboard_control = OffboardControl()
-    rclpy.spin(offboard_control)
-    offboard_control.destroy_node()
+    circle_flight = CircleFlight()
+    rclpy.spin(circle_flight)
+    circle_flight.destroy_node()
     rclpy.shutdown()
 
 

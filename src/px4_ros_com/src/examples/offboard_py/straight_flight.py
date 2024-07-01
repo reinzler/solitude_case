@@ -9,17 +9,15 @@ import math
 import numpy as np
 from std_msgs.msg import String
 
-
 def generate_linear_trajectory():
-    """Generate points in a linear."""
+    """Generate points in a linear trajectory from 0.01 to 300.1 with a step of 0.01."""
     x = np.arange(0.01, 300.1, 0.01).tolist()
-    y = list(map(lambda y: y, x))
+    y = list(map(lambda y: y, x))  # This line is redundant since y will be the same as x
     points = list(zip(x, y))
-
     return points
 
 
-class OffboardControl(Node):
+class StraightFlightArucoDetection(Node):
     """Node for controlling a vehicle in offboard mode."""
 
     def __init__(self) -> None:
@@ -55,6 +53,7 @@ class OffboardControl(Node):
         self.takeoff_height = -2.6
         self.point_index = 0  # Index of the current point in the circle
         self.aruco_marker_detected = False
+
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
 
@@ -67,6 +66,7 @@ class OffboardControl(Node):
         self.vehicle_status = vehicle_status
 
     def aruco_callback(self, msg):
+        """Callback function for aruco_detected topic subscriber."""
         if msg is not None:
             self.aruco_marker_detected = True
         else:
@@ -138,11 +138,14 @@ class OffboardControl(Node):
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
 
+        # After 10 iterations, engage offboard mode and arm the vehicle
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
+        # If the vehicle has reached the takeoff height and is in offboard mode, start flying in a circle
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+            # If an Aruco marker is detected, hover at the previous point and change altitude to 1m
             if self.aruco_marker_detected:
                 self.get_logger().info("Aruco marker detected, hovering...")
                 points = generate_linear_trajectory()
@@ -154,16 +157,17 @@ class OffboardControl(Node):
                 self.publish_position_setpoint(x, y, self.takeoff_height)
                 self.point_index += 1
 
+        # Increment the offboard setpoint counter until it reaches 11
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1
 
 
 def main(args=None) -> None:
-    print('Starting offboard control node...')
+    print('Starting offboard control node, straight flight and aruco marker detection')
     rclpy.init(args=args)
-    offboard_control = OffboardControl()
-    rclpy.spin(offboard_control)
-    offboard_control.destroy_node()
+    straight_flight = StraightFlightArucoDetection()
+    rclpy.spin(straight_flight)
+    straight_flight.destroy_node()
     rclpy.shutdown()
 
 
