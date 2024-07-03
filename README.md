@@ -58,6 +58,8 @@ From **/src/PX4-Autopilot**</br>
 ```make px4_sitl gazebo-classic```<br/>
 <br>From different shell</br>
 ```MicroXRCEAgent udp4 -p 8888```<br/>
+<br>From different shell</br>
+```QGroundControl.AppImage```<br/>
 <br>From different shell
 <br>To test the drone's flight in a circle<br/>
 ```ros2 run px4_ros_com circle_flight.py``` <br/>

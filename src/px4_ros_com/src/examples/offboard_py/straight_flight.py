@@ -4,24 +4,22 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
-import numpy as np
 from std_msgs.msg import Float32MultiArray
 from colorama import Fore
-
+import numpy as np
 
 def generate_linear_trajectory():
     """Generate points in a linear trajectory from 0.01 to 300.1 with a step of 0.01."""
     x = np.arange(0.01, 300.1, 0.01).tolist()
-    y = list(map(lambda y: y, x))  # This line is redundant since y will be the same as x
+    y = x  # Diagonal trajectory
     points = list(zip(x, y))
     return points
-
 
 class StraightFlightArucoDetection(Node):
     """Node for controlling a vehicle in offboard mode."""
 
     def __init__(self) -> None:
-        super().__init__('offboard_control_takeoff_and_land')
+        super().__init__('straight_flight_aruco_detection')
 
         # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(
@@ -33,17 +31,17 @@ class StraightFlightArucoDetection(Node):
 
         # Create publishers
         self.offboard_control_mode_publisher = self.create_publisher(
-            OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
+            OffboardControlMode, '/fmu/offboard_control_mode/in', qos_profile)
         self.trajectory_setpoint_publisher = self.create_publisher(
-            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile)
+            TrajectorySetpoint, '/fmu/trajectory_setpoint/in', qos_profile)
         self.vehicle_command_publisher = self.create_publisher(
-            VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
+            VehicleCommand, '/fmu/vehicle_command/in', qos_profile)
 
         # Create subscribers
         self.vehicle_local_position_subscriber = self.create_subscription(
-            VehicleLocalPosition, '/fmu/out/vehicle_local_position', self.vehicle_local_position_callback, qos_profile)
+            VehicleLocalPosition, '/fmu/vehicle_local_position/out', self.vehicle_local_position_callback, qos_profile)
         self.vehicle_status_subscriber = self.create_subscription(
-            VehicleStatus, '/fmu/out/vehicle_status', self.vehicle_status_callback, qos_profile)
+            VehicleStatus, '/fmu/vehicle_status/out', self.vehicle_status_callback, qos_profile)
         self.aruco_subscriber = self.create_subscription(Float32MultiArray, "/aruco_detected", self.aruco_callback, 10)
 
         # Initialize variables
@@ -51,9 +49,9 @@ class StraightFlightArucoDetection(Node):
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.takeoff_height = -2.6
-        self.point_index = 0  # Index of the current point in the circle
         self.aruco_marker_detected = False
-        self.aruco_xy = []
+        self.aruco_xy = [0.0, 0.0]
+        self.point_index = 0
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -66,18 +64,20 @@ class StraightFlightArucoDetection(Node):
         """Callback function for vehicle_status topic subscriber."""
         self.vehicle_status = vehicle_status
 
-    def hover_above_the_marker(self, x, y):
-        points = list(zip(x, y))
-        return points
-
     def aruco_callback(self, msg):
         """Callback function for aruco_detected topic subscriber."""
-        if msg is not None:
-            self.aruco_marker_detected = True
-            self.aruco_xy.extend([msg.data[0], msg.data[-1]])
-            # self.get_logger().info(f"{Fore.YELLOW}Aruco marker detected at: {self.aruco_xy[-2]}, {self.aruco_xy[-1]}{Fore.RESET}")
-        else:
-            self.aruco_marker_detected = False
+        self.aruco_marker_detected = len(msg.data) == 2
+        if self.aruco_marker_detected:
+            self.aruco_xy = msg.data
+            self.get_logger().info(
+                f"{Fore.YELLOW}Aruco marker detected at: {self.aruco_xy[0]}, {self.aruco_xy[1]}{Fore.RESET}")
+
+            # If ArUco marker is detected, adjust position to hover above it
+            x_correction, y_correction = self.aruco_xy
+            x_current, y_current = self.vehicle_local_position.x, self.vehicle_local_position.y
+            self.publish_position_setpoint(x_current + x_correction, y_current + y_correction, self.takeoff_height)
+            self.get_logger().info(
+                f"Correcting position to hover above Aruco marker at {x_current + x_correction}, {y_current + y_correction}")
 
     def arm(self):
         """Send an arm command to the vehicle."""
@@ -85,22 +85,11 @@ class StraightFlightArucoDetection(Node):
             VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
         self.get_logger().info('Arm command sent')
 
-    def disarm(self):
-        """Send a disarm command to the vehicle."""
-        self.publish_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
-        self.get_logger().info('Disarm command sent')
-
     def engage_offboard_mode(self):
         """Switch to offboard mode."""
         self.publish_vehicle_command(
             VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
         self.get_logger().info("Switching to offboard mode")
-
-    def land(self):
-        """Switch to land mode."""
-        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
-        self.get_logger().info("Switching to land mode")
 
     def publish_offboard_control_heartbeat_signal(self):
         """Publish the offboard control mode."""
@@ -117,7 +106,7 @@ class StraightFlightArucoDetection(Node):
         """Publish the trajectory setpoint."""
         msg = TrajectorySetpoint()
         msg.position = [x, y, z]
-        msg.yaw = 1.57079  # (90 degree)
+        msg.yaw = 0.0  # Yaw is not used in this example
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
         self.get_logger().info(f"Publishing position setpoints {[x, y, z]}")
@@ -145,40 +134,32 @@ class StraightFlightArucoDetection(Node):
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
 
-        # After 10 iterations, engage offboard mode and arm the vehicle
-        if self.offboard_setpoint_counter == 10:
+        # After 3 iterations, engage offboard mode and arm the vehicle
+        if self.offboard_setpoint_counter == 3:
             self.engage_offboard_mode()
             self.arm()
 
-        # If the vehicle has reached the takeoff height and is in offboard mode, start flying in a circle
-        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            # If an Aruco marker is detected, hover at the previous point and change altitude to 1m
-            if self.aruco_marker_detected:
-                x, y = self.aruco_xy[-2], self.aruco_xy[-1]
-                self.publish_position_setpoint(-x, -y, self.takeoff_height)
-                self.get_logger().info(f"{Fore.RED}Aruco marker detected, hovering {x, y,}{Fore.RESET}")
-            else:
+        # If the vehicle is in offboard mode
+        if self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+            if not self.aruco_marker_detected:
                 points = generate_linear_trajectory()
                 x, y = points[self.point_index]
                 self.publish_position_setpoint(x, y, self.takeoff_height)
                 self.point_index += 1
 
+
         # Increment the offboard setpoint counter until it reaches 11
-        if self.offboard_setpoint_counter < 11:
+        if self.offboard_setpoint_counter < 4:
             self.offboard_setpoint_counter += 1
 
 
 def main(args=None) -> None:
     print('Starting offboard control node, straight flight and aruco marker detection')
     rclpy.init(args=args)
-    straight_flight = StraightFlightArucoDetection()
-    rclpy.spin(straight_flight)
-    straight_flight.destroy_node()
+    straight_flight_aruco_detection = StraightFlightArucoDetection()
+    rclpy.spin(straight_flight_aruco_detection)
+    straight_flight_aruco_detection.destroy_node()
     rclpy.shutdown()
 
-
 if __name__ == '__main__':
-    try:
-        main()
-    except Exception as e:
-        print(e)
+    main()
