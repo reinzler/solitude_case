@@ -4,10 +4,10 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
-from colorama import Fore
-import math
 import numpy as np
-from std_msgs.msg import String
+from std_msgs.msg import Float32MultiArray
+from colorama import Fore
+
 
 def generate_linear_trajectory():
     """Generate points in a linear trajectory from 0.01 to 300.1 with a step of 0.01."""
@@ -44,7 +44,7 @@ class StraightFlightArucoDetection(Node):
             VehicleLocalPosition, '/fmu/out/vehicle_local_position', self.vehicle_local_position_callback, qos_profile)
         self.vehicle_status_subscriber = self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status', self.vehicle_status_callback, qos_profile)
-        self.aruco_subscriber = self.create_subscription(String, "/aruco_detected", self.aruco_callback, 10)
+        self.aruco_subscriber = self.create_subscription(Float32MultiArray, "/aruco_detected", self.aruco_callback, 10)
 
         # Initialize variables
         self.offboard_setpoint_counter = 0
@@ -53,6 +53,7 @@ class StraightFlightArucoDetection(Node):
         self.takeoff_height = -2.6
         self.point_index = 0  # Index of the current point in the circle
         self.aruco_marker_detected = False
+        self.aruco_xy = []
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -65,10 +66,16 @@ class StraightFlightArucoDetection(Node):
         """Callback function for vehicle_status topic subscriber."""
         self.vehicle_status = vehicle_status
 
+    def hover_above_the_marker(self, x, y):
+        points = list(zip(x, y))
+        return points
+
     def aruco_callback(self, msg):
         """Callback function for aruco_detected topic subscriber."""
         if msg is not None:
             self.aruco_marker_detected = True
+            self.aruco_xy.extend([msg.data[0], msg.data[-1]])
+            # self.get_logger().info(f"{Fore.YELLOW}Aruco marker detected at: {self.aruco_xy[-2]}, {self.aruco_xy[-1]}{Fore.RESET}")
         else:
             self.aruco_marker_detected = False
 
@@ -147,10 +154,9 @@ class StraightFlightArucoDetection(Node):
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             # If an Aruco marker is detected, hover at the previous point and change altitude to 1m
             if self.aruco_marker_detected:
-                self.get_logger().info("Aruco marker detected, hovering...")
-                points = generate_linear_trajectory()
-                x, y = points[self.point_index - 1]
-                self.publish_position_setpoint(x, y, -1.0)
+                x, y = self.aruco_xy[-2], self.aruco_xy[-1]
+                self.publish_position_setpoint(-x, -y, self.takeoff_height)
+                self.get_logger().info(f"{Fore.RED}Aruco marker detected, hovering {x, y,}{Fore.RESET}")
             else:
                 points = generate_linear_trajectory()
                 x, y = points[self.point_index]
