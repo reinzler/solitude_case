@@ -190,8 +190,8 @@ class ArucoNode(rclpy.node.Node):
                 markers.poses.append(pose)
                 markers.marker_ids.append(marker_id[0])
                 drone_command_x_y = Float32MultiArray()
-                # drone_command_x_y.data = [-pose.position.x, -pose.position.y]
-                drone_command_x_y.data = [pose.position.x, pose.position.y]
+                drone_command_x_y.data = [-pose.position.x, -pose.position.y]
+                # drone_command_x_y.data = [pose.position.x, pose.position.y]
 
 
             self.poses_pub.publish(pose_array)

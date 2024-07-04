@@ -51,6 +51,12 @@ _If fails:_
 <br>```sudo apt-get install gazebo```<br/>
 _Gazebo ROS Libraries_
 <br>```sudo apt install ros-<ROS_DISTRO>-gazebo-ros-pkgs```</br>
+<br><br/>
+* **ROS2 aruco**
+_<br>Clone from current repo and install python libs:_
+<br>```pip3 install opencv-contrib-python==4.9.0.80 transforms3d```</br>
+_Build from your **src/** directory_:
+<br>```colcon build --packages-select ros2_aruco ros2_aruco_interfaces && source install/local_setup.bash```</br>
 
 
 <br>After installation, test:<br/>
